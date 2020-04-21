@@ -3,13 +3,22 @@ setwd("~/Spatial Analysis IV/Git_Projects/spatialstats4")
 
 # load packages
 
+library(broom)
 library(dplyr)
+library(ggplot2)
 library(lubridate)
+library(maptools)
 library(rgdal)
 library(spatstat) 
+library(sp)
+library(spdplyr)
 library(splancs)
 library(stringr)
 library(tidyr)
+
+###################               
+## DATA CLEANING ##
+###################             
 
 # read in crimes data
 
@@ -167,6 +176,39 @@ mydir <- getwd()
 
 write.csv(clean.alcohol.outlets, "Clean_Alcohol_Outlets_v2.csv")
 
+#################### 
+## INTENSITY MAPS ##
+#################### 
+
+# read in projected Chicago shapefile
+
+Chicago <- readOGR("Chicago_Boundary_prj.shp")
+
+## Provide the spatial domain ##
+#  Note: I tried using the fortify function shown in lab but this resulted in the polygon tearing on the upper left
+
+# extract the spatial polygon 
+
+x <- Chicago@polygons[[1]]@Polygons 
+
+str(x) # The slot I want seems to be 2, not 1 (as shown in lab)
+
+# retrieve the matrix of coordinates from the spatial polygon
+
+coords <- slot(x[[2]], "coords") 
+
+# inverse the order of the points so that they appear in a counterclockwise order
+
+coords <-coords[11326:1, ] 
+
+# get rid of the first row, which is a repeat of the final row
+
+coords <- coords[-1, ] 
+
+# change the scale from meters to miles
+
+coords_mi < -coords * 0.000621371192 
+
 # read in projected alcohol outlets. This file excludes Late Hour
 
 alcohol <- readOGR("Alcohol_Outlets_wo_LH.shp")
@@ -175,4 +217,107 @@ alcohol <- readOGR("Alcohol_Outlets_wo_LH.shp")
 
 alcohol <- remove.duplicates(alcohol) # 511 removed
 
+# subset into on-premise and off-premise consumption outlets
+
+on_premise <- alcohol %>% filter(alcohol@data$ON_PREMISE == 1)
+off_premise <- alcohol %>% filter(alcohol@data$ON_PREMISE == 0)
+
+# create ppp objects
+
+alcohol_ppp <- ppp(alcohol@coords[, 1] * 0.000621371192, alcohol@coords[, 2] * 0.000621371192,
+                  window = owin(poly = list(x = coords_mi[, 1], y = coords_mi[, 2])))
+
+on_premise_ppp <- ppp(on_premise@coords[, 1] * 0.000621371192, on_premise@coords[, 2] * 0.000621371192,
+                      window = owin(poly = list(x = coords_mi[, 1], y = coords_mi[, 2])))
+
+off_premise_ppp <- ppp(off_premise@coords[, 1] * 0.000621371192, off_premise@coords[, 2] * 0.000621371192,
+                       window = owin(poly = list(x = coords_mi[, 1], y = coords_mi[, 2])))
+
+# create kernel density maps using the optimal bandwidth
+
+alcohol_kd <- density(alcohol_ppp, bw.diggle(alcohol_ppp))
+plot(alcohol_kd, main = "Spatial Intensity of Alcohol Outlets")
+polygon(coords_mi, lwd = 2)
+
+on_premise_kd <- density(on_premise_ppp, bw.diggle(on_premise_ppp))
+plot(on_premise_kd, main = "Spatial Intensity of On-Premise Alcohol Outlets")
+polygon(coords_mi, lwd = 2)
+
+off_premise_kd <- density(off_premise_ppp, bw.diggle(off_premise_ppp))
+plot(off_premise_kd, main = "Spatial Intensity of Off-Premise Alcohol Outlets")
+polygon(coords_mi, lwd = 2)
+
+# read in projected crime data
+
+crimes <- readOGR("Crimes_2018_2019_prj.shp")
+
+crimes <- remove.duplicates(crimes) # this removes a LOT of points because of the street block anonymization. Use jittering? 
+
+# crimesj = SpatialPointsDataFrame(jitter(coordinates(crimes), factor = 0.1), crimes@data)
+
+# crimesj2 <- remove.duplicates(crimesj)
+
+# subset into violent/non-violent, day/evening/midnight, weekend/weekday
+
+violent_crimes <- crimes %>% filter(crimes@data$Violent == 1)
+nonviolent_crimes <- crimes %>% filter(crimes@data$Violent == 0)
+
+day_violent_crimes <- violent_crimes %>% filter(violent_crimes@data$Shift == "DAY")
+evening_violent_crimes <- violent_crimes %>% filter(violent_crimes@data$Shift == "EVENING")
+midnight_violent_crimes <- violent_crimes %>% filter(violent_crimes@data$Shift == "MIDNIGHT")
+
+weekend_violent_crimes <- violent_crimes %>% filter(violent_crimes@data$Weekend == 1) 
+weekday_violent_crimes <- violent_crimes %>% filter(violent_crimes@data$Weekend == 0) 
+
+# create ppp objects
+
+crimes_ppp <- ppp(crimes@coords[, 1] * 0.000621371192, crimes@coords[, 2] * 0.000621371192,
+                  window = owin(poly = list(x = coords_mi[, 1], y = coords_mi[, 2])))
+
+
+violent_crimes_ppp <- ppp(violent_crimes@coords[, 1] * 0.000621371192, violent_crimes@coords[, 2] * 0.000621371192,
+                          window = owin(poly = list(x = coords_mi[, 1], y = coords_mi[, 2])))
+
+nonviolent_crimes_ppp <- ppp(nonviolent_crimes@coords[, 1] * 0.000621371192, nonviolent_crimes@coords[, 2] * 0.000621371192,
+                          window = owin(poly = list(x = coords_mi[, 1], y = coords_mi[, 2])))
+
+# create kernel density maps using the optimal bandwidth
+
+crimes_kd <- density(crimes_ppp, bw.diggle(crimes_ppp))
+plot(crimes_kd, main = "Spatial Intensity of Crimes")
+polygon(coords_mi, lwd = 2)
+
+violent_crimes_kd <- density(violent_crimes_ppp, bw.diggle(violent_crimes_ppp))
+plot(violent_crimes_kd, main = "Spatial Intensity of Violent Crimes")
+polygon(coords_mi, lwd = 2)
+
+nonviolent_crimes_kd <- density(nonviolent_crimes_ppp, bw.diggle(nonviolent_crimes_ppp))
+plot(nonviolent_crimes_kd, main = "Spatial Intensity of Non-Violent Crimes")
+polygon(coords_mi, lwd = 2)
+
+
+
+
+
+
+
+
+temp <- rbind(data.frame(x = alcohol_ppp$x, y = alcohol_ppp$y, type = "Alcohol Outlets"), 
+              data.frame(x = crimes_ppp$x, y = crimes_ppp$y, type = "Crimes"))
+
+temp_ppp <- ppp(temp[, 1], temp[, 2],
+                window = owin(poly = list(x = coords_mi[, 1], y = coords_mi[, 2])), marks=temp$type)
+
+K_cross <- Kcross(temp_ppp, "Alcohol Outlets", "Crimes")
+
+plot(K_cross$r, K_cross$iso, lwd = 2, xlab = "Distance (mi)", ylab = "Estimated Cross K-Function" ,main = "", type = "l")
+title("Cross K-Function")
+lines(K_cross$r, K_cross$theo, lwd = 2, col = "green" ,lty = 1)
+legend(locator(1), legend = c("Observed Cross K", "Independence Cross K"), lty = c(1, 1), col = c("black", "green"), lwd = 2)
+
+lambda <- 197954/231.37
+lambda # 855.57 crimes expected per sq mi
+
+plot(K_cross$r, K_cross$iso * lambda, lwd = 2, xlab = "Distance (mi)", ylab = "Expected Number", main = "", type = "l")
+lines(K_cross$r,K_cross$theo * lambda, lwd = 2, col = "blue", lty = 3)
 
