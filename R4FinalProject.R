@@ -3,7 +3,6 @@ setwd("~/Spatial Analysis IV/Git_Projects/spatialstats4")
 
 # load packages
 
-library(broom)
 library(dplyr)
 library(ggplot2)
 library(lubridate)
@@ -113,7 +112,7 @@ alcohol.outlets <- subset(outlets, LICENSE.CODE == 1470 | LICENSE.CODE == 1474 |
 alcohol.outlets <- subset(alcohol.outlets, APPLICATION.TYPE == "RENEW")
 
 # create new variable ON.PREMISE that indicates whether the outlet has a license for on-premise consumption, 
-# coding Late Hour outlets as missing for now
+# coding Late Hour outlets as missing for now (they will be exported to separate file after projecting in ArcGIS)
 
 alcohol.outlets <- mutate(alcohol.outlets, ON.PREMISE = case_when(
   LICENSE.CODE == 1470 | LICENSE.CODE == 1475  ~ 1,
@@ -131,9 +130,9 @@ alcohol.outlets.4geocode <- alcohol.outlets[which(is.na(alcohol.outlets$LONGITUD
 
 write.csv(alcohol.outlets.4geocode , "Alcohol_Outlets_4Geocode.csv")
 
-# Geocoding notes -- downloaded TIGER shapefile for Cook County, created Address Locator, Geocoded produced 41 Matched and 45 Unmatched. 
-# Most were matched by looking up the business name and tweaking the address, but 22 could not be matched, mainly because they were outlets located
-# at O'Hare airport terms. Not a big deal and they were deleted
+# Geocoding -- downloaded TIGER shapefile for Cook County to create Address Locator. Geocoding produced 41 Matched and 45 Unmatched. 
+# Most were matched by googling the business name and cleaning up the address. 22 could not be matched, most of them business at O'hare.
+# These were removed from the dataset. 
 
 # write all outlets to .csv file so that coordinates from geocoding can be joined to outlets that already had coordinates 
 
@@ -185,7 +184,7 @@ write.csv(clean.alcohol.outlets, "Clean_Alcohol_Outlets_v2.csv")
 Chicago <- readOGR("Chicago_Boundary_prj.shp")
 
 ## Provide the spatial domain ##
-#  Note: I tried using the fortify function shown in lab but this resulted in the polygon tearing on the upper left
+#  Note: I tried using the fortify function shown in lab but this resulted in the polygon tearing on the upper left (O'Hare)
 
 # extract the spatial polygon 
 
@@ -251,11 +250,7 @@ polygon(coords_mi, lwd = 2)
 
 crimes <- readOGR("Crimes_2018_2019_prj.shp")
 
-crimes <- remove.duplicates(crimes) # this removes a LOT of points because of the street block anonymization. Use jittering? 
-
-# crimesj = SpatialPointsDataFrame(jitter(coordinates(crimes), factor = 0.1), crimes@data)
-
-# crimesj2 <- remove.duplicates(crimesj)
+crimes <- remove.duplicates(crimes) # this removes a LOT of points because of the street block anonymization
 
 # subset into violent/non-violent, day/evening/midnight, weekend/weekday
 
@@ -274,12 +269,26 @@ weekday_violent_crimes <- violent_crimes %>% filter(violent_crimes@data$Weekend 
 crimes_ppp <- ppp(crimes@coords[, 1] * 0.000621371192, crimes@coords[, 2] * 0.000621371192,
                   window = owin(poly = list(x = coords_mi[, 1], y = coords_mi[, 2])))
 
-
 violent_crimes_ppp <- ppp(violent_crimes@coords[, 1] * 0.000621371192, violent_crimes@coords[, 2] * 0.000621371192,
                           window = owin(poly = list(x = coords_mi[, 1], y = coords_mi[, 2])))
 
 nonviolent_crimes_ppp <- ppp(nonviolent_crimes@coords[, 1] * 0.000621371192, nonviolent_crimes@coords[, 2] * 0.000621371192,
                           window = owin(poly = list(x = coords_mi[, 1], y = coords_mi[, 2])))
+
+day_violent_crimes_ppp <- ppp(day_violent_crimes@coords[, 1] * 0.000621371192, day_violent_crimes@coords[, 2] * 0.000621371192,
+                                  window = owin(poly = list(x = coords_mi[, 1], y = coords_mi[, 2])))
+
+evening_violent_crimes_ppp <- ppp(evening_violent_crimes@coords[, 1] * 0.000621371192, evening_violent_crimes@coords[, 2] * 0.000621371192,
+                          window = owin(poly = list(x = coords_mi[, 1], y = coords_mi[, 2])))
+
+midnight_violent_crimes_ppp <- ppp(midnight_violent_crimes@coords[, 1] * 0.000621371192, midnight_violent_crimes@coords[, 2] * 0.000621371192,
+                                  window = owin(poly = list(x = coords_mi[, 1], y = coords_mi[, 2])))
+
+weekday_violent_crimes_ppp <- ppp(weekday_violent_crimes@coords[, 1] * 0.000621371192, weekday_violent_crimes@coords[, 2] * 0.000621371192,
+                                   window = owin(poly = list(x = coords_mi[, 1], y = coords_mi[, 2])))
+
+weekend_violent_crimes_ppp <- ppp(weekend_violent_crimes@coords[, 1] * 0.000621371192, weekend_violent_crimes@coords[, 2] * 0.000621371192,
+                                  window = owin(poly = list(x = coords_mi[, 1], y = coords_mi[, 2])))
 
 # create kernel density maps using the optimal bandwidth
 
@@ -295,18 +304,43 @@ nonviolent_crimes_kd <- density(nonviolent_crimes_ppp, bw.diggle(nonviolent_crim
 plot(nonviolent_crimes_kd, main = "Spatial Intensity of Non-Violent Crimes")
 polygon(coords_mi, lwd = 2)
 
+day_violent_crimes_kd <- density(day_violent_crimes_ppp, bw.diggle(day_violent_crimes_ppp))
+plot(day_violent_crimes_kd, main = "Spatial Intensity of Violent Crimes -- Day")
+polygon(coords_mi, lwd = 2)
 
+evening_violent_crimes_kd <- density(evening_violent_crimes_ppp, bw.diggle(evening_violent_crimes_ppp))
+plot(evening_violent_crimes_kd, main = "Spatial Intensity of Violent Crimes -- Evening")
+polygon(coords_mi, lwd = 2)
 
+midnight_violent_crimes_kd <- density(midnight_violent_crimes_ppp, bw.diggle(midnight_violent_crimes_ppp))
+plot(midnight_violent_crimes_kd, main = "Spatial Intensity of Violent Crimes -- Midnight")
+polygon(coords_mi, lwd = 2)
 
+weekday_violent_crimes_kd <- density(weekday_violent_crimes_ppp, bw.diggle(weekday_violent_crimes_ppp))
+plot(weekday_violent_crimes_kd, main = "Spatial Intensity of Violent Crimes -- Weekday")
+polygon(coords_mi, lwd = 2)
 
+weekend_violent_crimes_kd <- density(weekend_violent_crimes_ppp, bw.diggle(weekend_violent_crimes_ppp))
+plot(weekend_violent_crimes_kd, main = "Spatial Intensity of Violent Crimes -- Weekend")
+polygon(coords_mi, lwd = 2)
 
+################              
+## K FUNCTION ##
+################  
 
+#####################              
+## DIFF K FUNCTION ##
+#####################  
+
+######################              
+## CROSS K FUNCTION ##
+######################      
 
 temp <- rbind(data.frame(x = alcohol_ppp$x, y = alcohol_ppp$y, type = "Alcohol Outlets"), 
               data.frame(x = crimes_ppp$x, y = crimes_ppp$y, type = "Crimes"))
 
 temp_ppp <- ppp(temp[, 1], temp[, 2],
-                window = owin(poly = list(x = coords_mi[, 1], y = coords_mi[, 2])), marks=temp$type)
+                window = owin(poly = list(x = coords_mi[, 1], y = coords_mi[, 2])), marks = temp$type)
 
 K_cross <- Kcross(temp_ppp, "Alcohol Outlets", "Crimes")
 
@@ -315,9 +349,9 @@ title("Cross K-Function")
 lines(K_cross$r, K_cross$theo, lwd = 2, col = "green" ,lty = 1)
 legend(locator(1), legend = c("Observed Cross K", "Independence Cross K"), lty = c(1, 1), col = c("black", "green"), lwd = 2)
 
-lambda <- 197954/231.37
+lambda <- 197954/231.37 # Do I use the # of crimes before duplicates were removed or after? 
 lambda # 855.57 crimes expected per sq mi
 
 plot(K_cross$r, K_cross$iso * lambda, lwd = 2, xlab = "Distance (mi)", ylab = "Expected Number", main = "", type = "l")
-lines(K_cross$r,K_cross$theo * lambda, lwd = 2, col = "blue", lty = 3)
+lines(K_cross$r, K_cross$theo * lambda, lwd = 2, col = "blue", lty = 3)
 
